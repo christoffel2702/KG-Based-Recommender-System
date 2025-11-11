@@ -1,17 +1,21 @@
 import os
+import sys
 from typing import List
 import numpy as np
 import torch
 import random
 from tqdm import tqdm
 
+# os.path.join(..., '..') -> go up one level to (.../KG-BASED_RECOMM...)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 
 class Dataloader:
-    def __init__(self, train_pos, train_neg, kg_lines, train_batch_size: int = 128, neg_rate: float = 2):
+    def __init__(self, train_pos, train_neg, kg_lines, n_user, n_item, train_batch_size: int = 128, neg_rate: float = 2):
         self.kg, self.rel_dict, self.n_entity = self._convert_kg(kg_lines)
         self.train_pos, self.train_neg = train_pos, train_neg
-        self.n_user = max(list(set(self.train_pos[:, 0]) | set(self.train_neg[:, 0]))) + 1
-        self.n_item = max(list(set(self.train_pos[:, 1]) | set(self.train_neg[:, 1]))) + 1
+        self.n_user = n_user
+        self.n_item = n_item
         self._load_ratings()
         self.known_neg_dict = []  # Save the currently known negative samples
         self._add_recsys_to_kg()
@@ -41,7 +45,7 @@ class Dataloader:
         entity_set = set()
         kg = []
         rel_dict = {}
-        for line in open('./relation2id.txt', encoding='utf8').readlines():
+        for line in open('../data/relation2id.txt', encoding='utf8').readlines():
             elements = line.replace('\n', '').split('\t')
             rel_dict[elements[0]] = int(elements[1])
         for line in lines:
@@ -216,7 +220,7 @@ class TransE(torch.nn.Module):
 
 
 class KGRS:
-    def __init__(self, train_pos: np.array, train_neg: np.array, kg_lines: List[str]):
+    def __init__(self, train_pos: np.array, train_neg: np.array, kg_lines: List[str], n_user: int, n_item=int):
         """
         Initialize the Algorithm
         :param train_pos: The Positive Samples in the Training Set, is a numpy matrix with shape (n,3),
@@ -238,8 +242,8 @@ class KGRS:
         """
         # Change the code work directory to the root dir of our submit folder
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
-        config = {"batch_size": 256, "eval_batch_size": 1024, "neg_rate": 1.5, "emb_dim": 16, "l1": True, "margin": 30,
-                  "learning_rate": 2e-3, "weight_decay": 5e-4, "epoch_num": 35}
+        config = {"batch_size": 128, "eval_batch_size": 1024, "neg_rate": 3, "emb_dim": 64, "l1": True, "margin": 35,
+                  "learning_rate": 1e-3, "weight_decay": 5e-4, "epoch_num": 50}
         self.batch_size = config["batch_size"]
         self.eval_batch_size = config["eval_batch_size"]
         self.neg_rate = config["neg_rate"]
@@ -251,7 +255,7 @@ class KGRS:
         self.epoch_num = config["epoch_num"]
         self.device_index = -1
         self.kg = kg_lines
-        self.dataloader = Dataloader(train_pos, train_neg, self.kg, neg_rate=self.neg_rate,
+        self.dataloader = Dataloader(train_pos, train_neg, self.kg, n_user=n_user, n_item=n_item, neg_rate=self.neg_rate,
                                      train_batch_size=self.batch_size)
         self.model = TransE(ent_num=self.dataloader.ent_num, rel_num=self.dataloader.rel_num,
                             dataloader=self.dataloader, margin=self.margin, dim=self.emb_dim, l1=self.l1,
